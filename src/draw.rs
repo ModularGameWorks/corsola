@@ -3,7 +3,6 @@ use glyphon::{
     cosmic_text::Align, fontdb::Source, Attrs, Buffer, Color, FontSystem, Metrics, Resolution,
     Shaping, SwashCache, TextArea, TextAtlas, TextBounds, TextRenderer, Wrap,
 };
-// use ouroboros::self_referencing;
 use pixels::{wgpu::MultisampleState, Pixels, SurfaceTexture};
 use self_cell::self_cell;
 use tiny_skia::{Mask, Pixmap, PixmapPaint, Transform};
@@ -134,13 +133,22 @@ impl<'a> Renderer<'a> {
             self.font_sys = Some(FontSystem::new_with_fonts(self.fonts.clone()));
         }
         if let Some(fonts) = &mut self.font_sys {
+            let device = self.pixels.device();
+            let queue = self.pixels.queue();
+            let tex = &self.pixels.context().texture;
+            let width = tex.width();
+            let height = tex.height();
             let line_height = match params.line_height {
                 Some(lh) => lh,
                 None => font_size * 1.5,
             };
             let mut buf = Buffer::new(fonts, Metrics::new(font_size, line_height));
             buf.set_wrap(fonts, params.wrap);
-            buf.set_size(fonts, params.dimensions.0, params.dimensions.1);
+            let (dimx, dimy) = match params.dimensions {
+                Some((x, y)) => (x, y),
+                None => (width as f32, height as f32),
+            };
+            buf.set_size(fonts, dimx, dimy);
             buf.set_text(fonts, txt, params.attrs, params.shaping);
 
             for line in buf.lines.iter_mut() {
@@ -148,12 +156,6 @@ impl<'a> Renderer<'a> {
             }
 
             buf.shape_until_scroll(fonts);
-
-            let device = self.pixels.device();
-            let queue = self.pixels.queue();
-            let tex = &self.pixels.context().texture;
-            let width = tex.width();
-            let height = tex.height();
 
             if self.text_renderers.len() <= self.num_text {
                 self.text_renderers.push(TextRenderer::new(
@@ -177,7 +179,15 @@ impl<'a> Renderer<'a> {
                         left: x,
                         top: y,
                         scale: params.scale,
-                        bounds: params.bounds,
+                        bounds: match params.bounds {
+                            Some(bounds) => bounds,
+                            None => TextBounds {
+                                left: x as i32,
+                                top: y as i32,
+                                right: width as i32,
+                                bottom: (y + line_height) as i32,
+                            },
+                        },
                         default_color: params.colour,
                     }],
                     &mut self.glyph_cache,
@@ -212,6 +222,10 @@ self_cell!(
 impl Surface {
     pub fn window(&self) -> &Window {
         self.borrow_owner()
+    }
+
+    pub fn request_redraw(&mut self) {
+        self.with_dependent_mut(|win, _rend| win.request_redraw());
     }
 
     pub fn fill(&mut self, colour: tiny_skia::Color) {
@@ -309,9 +323,9 @@ pub struct TextParams<'a> {
     pub align: Option<Align>,
     pub line_height: Option<f32>,
     pub wrap: Wrap,
-    pub dimensions: (f32, f32),
+    pub dimensions: Option<(f32, f32)>,
     pub scale: f32,
-    pub bounds: TextBounds,
+    pub bounds: Option<TextBounds>,
     pub colour: Color,
 }
 
@@ -323,14 +337,9 @@ impl<'a> Default for TextParams<'a> {
             align: None,
             line_height: None,
             wrap: Wrap::Word,
-            dimensions: (100.0, 100.0),
+            dimensions: None,
             scale: 1.0,
-            bounds: TextBounds {
-                left: 0,
-                top: 0,
-                right: 100,
-                bottom: 100,
-            },
+            bounds: None,
             colour: Color::rgb(255, 255, 255),
         }
     }

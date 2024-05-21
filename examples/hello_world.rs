@@ -51,13 +51,6 @@ impl ApplicationHandler for App {
                         60.0,
                         TextParams {
                             colour: glyphon::cosmic_text::Color::rgb(0, 0, 0),
-                            dimensions: (1000.0, 100.0),
-                            bounds: TextBounds {
-                                left: 0,
-                                top: 0,
-                                right: 1000,
-                                bottom: 100,
-                            },
                             ..Default::default()
                         },
                     )
@@ -70,20 +63,13 @@ impl ApplicationHandler for App {
                         60.0,
                         TextParams {
                             colour: glyphon::cosmic_text::Color::rgb(255, 255, 255),
-                            dimensions: (1000.0, 200.0),
-                            bounds: TextBounds {
-                                left: 0,
-                                top: 0,
-                                right: 1000,
-                                bottom: 200,
-                            },
                             ..Default::default()
                         },
                     )
                     .unwrap();
 
                     surf.update().unwrap();
-                    surf.with_dependent_mut(|win, _rend| win.request_redraw());
+                    surf.request_redraw();
                 }
                 // if let Some(win) = &mut self.window {
                 // win.request_redraw();

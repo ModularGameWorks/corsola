@@ -9,7 +9,12 @@ use tiny_skia::{Mask, Pixmap, PixmapPaint, Transform};
 use wgpu::{
     LoadOp, Operations, RenderPassColorAttachment, RenderPassDescriptor, StoreOp, TextureFormat,
 };
-use winit::{dpi::LogicalSize, error::OsError, event_loop::ActiveEventLoop, window::Window};
+use winit::{
+    dpi::LogicalSize,
+    error::OsError,
+    event_loop::ActiveEventLoop,
+    window::{Window, WindowAttributes},
+};
 
 #[cfg(target_os = "android")]
 const FORMAT: TextureFormat = TextureFormat::Rgba8UnormSrgb;
@@ -301,6 +306,32 @@ pub fn new_window(
         .with_title(title)
         .with_inner_size(size)
         .with_min_inner_size(size);
+
+    event_loop.create_window(attributes)
+}
+
+pub fn new_window_ex(
+    event_loop: &'_ ActiveEventLoop,
+    title: &str,
+    width: f64,
+    height: f64,
+    attr_func: impl FnOnce(WindowAttributes) -> WindowAttributes,
+) -> std::result::Result<Window, OsError> {
+    let size = LogicalSize::new(width, height);
+    #[cfg(not(any(target_os = "android", target_os = "linux")))]
+    let mut attributes = winit::window::Window::default_attributes()
+        .with_title(title)
+        .with_inner_size(size)
+        .with_min_inner_size(size)
+        .with_visible(true);
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    let mut attributes = winit::window::Window::default_attributes()
+        .with_title(title)
+        .with_inner_size(size)
+        .with_min_inner_size(size);
+
+    attributes = (attr_func)(attributes);
+
     event_loop.create_window(attributes)
 }
 
@@ -311,6 +342,20 @@ pub fn new_surface(
     height: f64,
 ) -> Result<Surface> {
     let window = new_window(event_loop, title, width, height)?;
+
+    Ok(Surface::new(window, |window| {
+        Renderer::new(window).unwrap()
+    }))
+}
+
+pub fn new_surface_ex(
+    event_loop: &'_ ActiveEventLoop,
+    title: &str,
+    width: f64,
+    height: f64,
+    attributes: impl FnOnce(WindowAttributes) -> WindowAttributes,
+) -> Result<Surface> {
+    let window = new_window_ex(event_loop, title, width, height, attributes)?;
 
     Ok(Surface::new(window, |window| {
         Renderer::new(window).unwrap()

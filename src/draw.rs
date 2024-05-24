@@ -150,7 +150,10 @@ impl<'a> Renderer<'a> {
             let mut buf = Buffer::new(fonts, Metrics::new(font_size, line_height));
             buf.set_wrap(fonts, params.wrap);
             let (dimx, dimy) = match params.dimensions {
-                Some((x, y)) => (x, y),
+                Some((x, y)) => {
+                    // buf.set_size(fonts, x, y);
+                    (x, y)
+                }
                 None => (width as f32, height as f32),
             };
             buf.set_size(fonts, dimx, dimy);
@@ -170,6 +173,7 @@ impl<'a> Renderer<'a> {
                     None,
                 ));
             }
+            let (boundsx, boundsy) = buf.size();
             self.text_renderers
                 .get_mut(self.num_text)
                 .unwrap()
@@ -189,8 +193,10 @@ impl<'a> Renderer<'a> {
                             None => TextBounds {
                                 left: x as i32,
                                 top: y as i32,
-                                right: width as i32,
-                                bottom: (y + line_height) as i32,
+                                right: boundsx as i32,
+                                bottom: boundsy as i32,
+                                // right: width as i32,
+                                // bottom: (y + line_height * buf.lines.len()) as i32,
                             },
                         },
                         default_color: params.colour,
@@ -227,6 +233,12 @@ self_cell!(
 impl Surface {
     pub fn window(&self) -> &Window {
         self.borrow_owner()
+    }
+
+    pub fn size(&self) -> (u32, u32) {
+        // self.borrow_owner().inner_size()
+        let surf = &self.borrow_dependent().surface;
+        (surf.width(), surf.height())
     }
 
     pub fn request_redraw(&mut self) {

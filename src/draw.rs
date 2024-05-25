@@ -4,6 +4,7 @@ use glyphon::{
     Shaping, SwashCache, TextArea, TextAtlas, TextBounds, TextRenderer, Wrap,
 };
 use pixels::{wgpu::MultisampleState, Pixels, SurfaceTexture};
+use self_cell::self_cell;
 use tiny_skia::{Mask, Pixmap, PixmapPaint, Transform};
 use wgpu::{LoadOp, Operations, RenderPassColorAttachment, RenderPassDescriptor, TextureFormat};
 use winit::{
@@ -17,7 +18,8 @@ const FORMAT: TextureFormat = TextureFormat::Rgba8UnormSrgb;
 #[cfg(not(target_os = "android"))]
 const FORMAT: TextureFormat = TextureFormat::Bgra8UnormSrgb;
 
-pub struct Renderer {
+pub struct Renderer<'a> {
+    window: &'a Window,
     pub pixels: Pixels,
     pub surface: Pixmap,
     text_renderers: Vec<TextRenderer>,
@@ -28,8 +30,8 @@ pub struct Renderer {
     fonts: Vec<Source>,
 }
 
-impl Renderer {
-    pub fn new(window: &'_ Window) -> Result<Self> {
+impl<'a> Renderer<'a> {
+    pub fn new(window: &'a Window) -> Result<Self> {
         let win_size = window.inner_size();
 
         let surface = Pixmap::new(win_size.width, win_size.height)
@@ -47,6 +49,7 @@ impl Renderer {
         //     TextRenderer::new(&mut font_atlas, device, MultisampleState::default(), None);
 
         Ok(Self {
+            window,
             pixels,
             surface,
             text_renderers: Vec::new(),
@@ -217,9 +220,82 @@ impl Renderer {
     }
 }
 
-pub struct Surface {
-    pub window: Window,
-    pub renderer: Renderer,
+self_cell!(
+    pub struct Surface {
+        owner: Window,
+        #[covariant]
+        dependent: Renderer,
+    }
+);
+
+impl Surface {
+    pub fn window(&self) -> &Window {
+        self.borrow_owner()
+    }
+
+    pub fn size(&self) -> (u32, u32) {
+        // self.borrow_owner().inner_size()
+        let surf = &self.borrow_dependent().surface;
+        (surf.width(), surf.height())
+    }
+
+    pub fn request_redraw(&mut self) {
+        self.with_dependent_mut(|win, _rend| win.request_redraw());
+    }
+
+    pub fn fill(&mut self, colour: tiny_skia::Color) {
+        self.with_dependent_mut(|_win, rend| rend.surface.fill(colour))
+    }
+
+    pub fn background(&mut self, bg: &Pixmap, paint: &PixmapPaint) {
+        self.with_dependent_mut(|_win, rend| {
+            let sx = rend.surface.width() as f32 / bg.width() as f32;
+            let sy = rend.surface.height() as f32 / bg.height() as f32;
+            rend.surface.draw_pixmap(
+                0,
+                0,
+                bg.as_ref(),
+                paint,
+                Transform::from_scale(sx, sy),
+                None,
+            );
+        })
+    }
+
+    pub fn blit(
+        &mut self,
+        x: i32,
+        y: i32,
+        pixmap: &Pixmap,
+        paint: &PixmapPaint,
+        transform: Transform,
+        mask: Option<&Mask>,
+    ) {
+        self.with_dependent_mut(|_win, rend| rend.blit(x, y, pixmap, paint, transform, mask))
+    }
+
+    pub fn update(&mut self) -> Result<()> {
+        self.with_dependent_mut(|_win, rend| rend.update())
+    }
+
+    pub fn load_fonts(&mut self, fonts: impl IntoIterator<Item = Source>, update: bool) {
+        self.with_dependent_mut(|_win, rend| rend.load_fonts(fonts, update))
+    }
+
+    pub fn text_ex(
+        &mut self,
+        txt: &str,
+        x: f32,
+        y: f32,
+        font_size: f32,
+        params: TextParams,
+    ) -> Result<()> {
+        self.with_dependent_mut(|_win, rend| rend.text_ex(txt, x, y, font_size, params))
+    }
+
+    pub fn text(&mut self, txt: &str, x: f32, y: f32, font_size: f32, colour: Color) -> Result<()> {
+        self.with_dependent_mut(|_win, rend| rend.text(txt, x, y, font_size, colour))
+    }
 }
 
 pub fn new_window<T>(
@@ -249,10 +325,9 @@ pub fn new_window_ex<T>(
 pub fn new_surface<T>(event_loop: &'_ EventLoop<T>, title: &str) -> Result<Surface> {
     let window = new_window(event_loop, title)?;
 
-    Ok(Surface {
-        window,
-        renderer: Renderer::new(&window)?,
-    })
+    Ok(Surface::new(window, |window| {
+        Renderer::new(window).unwrap()
+    }))
 }
 
 pub fn new_surface_ex<T>(
@@ -262,10 +337,9 @@ pub fn new_surface_ex<T>(
 ) -> Result<Surface> {
     let window = new_window_ex(event_loop, title, win_func)?;
 
-    Ok(Surface {
-        window,
-        renderer: Renderer::new(&window)?,
-    })
+    Ok(Surface::new(window, |window| {
+        Renderer::new(window).unwrap()
+    }))
 }
 
 pub struct TextParams<'a> {

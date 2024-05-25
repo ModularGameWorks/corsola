@@ -9,7 +9,7 @@ use tiny_skia::{Mask, Pixmap, PixmapPaint, Transform};
 use wgpu::{LoadOp, Operations, RenderPassColorAttachment, RenderPassDescriptor, TextureFormat};
 use winit::{
     error::OsError,
-    event_loop::EventLoop,
+    event_loop::{EventLoop, EventLoopWindowTarget},
     window::{Fullscreen, Window, WindowBuilder},
 };
 
@@ -299,7 +299,7 @@ impl Surface {
 }
 
 pub fn new_window<T>(
-    event_loop: &'_ EventLoop<T>,
+    event_loop: &'_ EventLoopWindowTarget<T>,
     title: &str,
 ) -> std::result::Result<Window, OsError> {
     WindowBuilder::new()
@@ -309,7 +309,7 @@ pub fn new_window<T>(
 }
 
 pub fn new_window_ex<T>(
-    event_loop: &'_ EventLoop<T>,
+    event_loop: &'_ EventLoopWindowTarget<T>,
     title: &str,
     win_func: impl FnOnce(WindowBuilder) -> WindowBuilder,
 ) -> std::result::Result<Window, OsError> {
@@ -322,7 +322,7 @@ pub fn new_window_ex<T>(
     builder.build(event_loop)
 }
 
-pub fn new_surface<T>(event_loop: &'_ EventLoop<T>, title: &str) -> Result<Surface> {
+pub fn new_surface<T>(event_loop: &'_ EventLoopWindowTarget<T>, title: &str) -> Result<Surface> {
     let window = new_window(event_loop, title)?;
 
     Ok(Surface::new(window, |window| {
@@ -331,7 +331,7 @@ pub fn new_surface<T>(event_loop: &'_ EventLoop<T>, title: &str) -> Result<Surfa
 }
 
 pub fn new_surface_ex<T>(
-    event_loop: &'_ EventLoop<T>,
+    event_loop: &'_ EventLoopWindowTarget<T>,
     title: &str,
     win_func: impl FnOnce(WindowBuilder) -> WindowBuilder,
 ) -> Result<Surface> {

@@ -4,16 +4,12 @@ use glyphon::{
     Shaping, SwashCache, TextArea, TextAtlas, TextBounds, TextRenderer, Wrap,
 };
 use pixels::{wgpu::MultisampleState, Pixels, SurfaceTexture};
-use self_cell::self_cell;
 use tiny_skia::{Mask, Pixmap, PixmapPaint, Transform};
-use wgpu::{
-    LoadOp, Operations, RenderPassColorAttachment, RenderPassDescriptor, StoreOp, TextureFormat,
-};
+use wgpu::{LoadOp, Operations, RenderPassColorAttachment, RenderPassDescriptor, TextureFormat};
 use winit::{
-    dpi::LogicalSize,
     error::OsError,
-    event_loop::ActiveEventLoop,
-    window::{Window, WindowAttributes},
+    event_loop::EventLoop,
+    window::{Fullscreen, Window, WindowBuilder},
 };
 
 #[cfg(target_os = "android")]
@@ -21,20 +17,19 @@ const FORMAT: TextureFormat = TextureFormat::Rgba8UnormSrgb;
 #[cfg(not(target_os = "android"))]
 const FORMAT: TextureFormat = TextureFormat::Bgra8UnormSrgb;
 
-pub struct Renderer<'a> {
-    pub pixels: Pixels<'a>,
+pub struct Renderer {
+    pub pixels: Pixels,
     pub surface: Pixmap,
     text_renderers: Vec<TextRenderer>,
     num_text: usize,
     font_atlas: TextAtlas,
-    // clear_colour: wgpu::Color,
     glyph_cache: SwashCache,
     font_sys: Option<FontSystem>,
     fonts: Vec<Source>,
 }
 
-impl<'a> Renderer<'a> {
-    pub fn new(window: &'a Window) -> Result<Self> {
+impl Renderer {
+    pub fn new(window: &'_ Window) -> Result<Self> {
         let win_size = window.inner_size();
 
         let surface = Pixmap::new(win_size.width, win_size.height)
@@ -97,16 +92,16 @@ impl<'a> Renderer<'a> {
                     ops: Operations {
                         load: LoadOp::Load,
                         // store: StoreOp::Discard,
-                        store: StoreOp::Store,
+                        store: true,
                     },
                 })],
                 depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
             });
 
             for t_rend in &self.text_renderers[..self.num_text] {
-                t_rend.render(&self.font_atlas, &mut pass)?;
+                t_rend
+                    .render(&self.font_atlas, &mut pass)
+                    .map_err(|e| anyhow!("Error rendering text {:?}", e))?;
             }
             // queue.submit(Some(encoder.finish()));
 
@@ -122,7 +117,7 @@ impl<'a> Renderer<'a> {
     pub fn load_fonts(&mut self, fonts: impl IntoIterator<Item = Source>, update: bool) {
         self.fonts.extend(fonts);
         if update {
-            self.font_sys = Some(FontSystem::new_with_fonts(self.fonts.clone()));
+            self.font_sys = Some(FontSystem::new_with_fonts(self.fonts.clone().into_iter()));
         }
     }
 
@@ -135,7 +130,7 @@ impl<'a> Renderer<'a> {
         params: TextParams,
     ) -> Result<()> {
         if self.font_sys.is_none() {
-            self.font_sys = Some(FontSystem::new_with_fonts(self.fonts.clone()));
+            self.font_sys = Some(FontSystem::new_with_fonts(self.fonts.clone().into_iter()));
         }
         if let Some(fonts) = &mut self.font_sys {
             let device = self.pixels.device();
@@ -222,156 +217,55 @@ impl<'a> Renderer<'a> {
     }
 }
 
-self_cell!(
-    pub struct Surface {
-        owner: Window,
-        #[covariant]
-        dependent: Renderer,
-    }
-);
-
-impl Surface {
-    pub fn window(&self) -> &Window {
-        self.borrow_owner()
-    }
-
-    pub fn size(&self) -> (u32, u32) {
-        // self.borrow_owner().inner_size()
-        let surf = &self.borrow_dependent().surface;
-        (surf.width(), surf.height())
-    }
-
-    pub fn request_redraw(&mut self) {
-        self.with_dependent_mut(|win, _rend| win.request_redraw());
-    }
-
-    pub fn fill(&mut self, colour: tiny_skia::Color) {
-        self.with_dependent_mut(|_win, rend| rend.surface.fill(colour))
-    }
-
-    pub fn background(&mut self, bg: &Pixmap, paint: &PixmapPaint) {
-        self.with_dependent_mut(|_win, rend| {
-            let sx = rend.surface.width() as f32 / bg.width() as f32;
-            let sy = rend.surface.height() as f32 / bg.height() as f32;
-            rend.surface.draw_pixmap(
-                0,
-                0,
-                bg.as_ref(),
-                paint,
-                Transform::from_scale(sx, sy),
-                None,
-            );
-        })
-    }
-
-    pub fn blit(
-        &mut self,
-        x: i32,
-        y: i32,
-        pixmap: &Pixmap,
-        paint: &PixmapPaint,
-        transform: Transform,
-        mask: Option<&Mask>,
-    ) {
-        self.with_dependent_mut(|_win, rend| rend.blit(x, y, pixmap, paint, transform, mask))
-    }
-
-    pub fn update(&mut self) -> Result<()> {
-        self.with_dependent_mut(|_win, rend| rend.update())
-    }
-
-    pub fn load_fonts(&mut self, fonts: impl IntoIterator<Item = Source>, update: bool) {
-        self.with_dependent_mut(|_win, rend| rend.load_fonts(fonts, update))
-    }
-
-    pub fn text_ex(
-        &mut self,
-        txt: &str,
-        x: f32,
-        y: f32,
-        font_size: f32,
-        params: TextParams,
-    ) -> Result<()> {
-        self.with_dependent_mut(|_win, rend| rend.text_ex(txt, x, y, font_size, params))
-    }
-
-    pub fn text(&mut self, txt: &str, x: f32, y: f32, font_size: f32, colour: Color) -> Result<()> {
-        self.with_dependent_mut(|_win, rend| rend.text(txt, x, y, font_size, colour))
-    }
+pub struct Surface {
+    pub window: Window,
+    pub renderer: Renderer,
 }
 
-pub fn new_window(
-    event_loop: &'_ ActiveEventLoop,
+pub fn new_window<T>(
+    event_loop: &'_ EventLoop<T>,
     title: &str,
-    width: f64,
-    height: f64,
 ) -> std::result::Result<Window, OsError> {
-    let size = LogicalSize::new(width, height);
-    #[cfg(not(any(target_os = "android", target_os = "linux")))]
-    let attributes = winit::window::Window::default_attributes()
+    WindowBuilder::new()
         .with_title(title)
-        .with_inner_size(size)
-        .with_min_inner_size(size)
-        .with_visible(true);
-    #[cfg(any(target_os = "android", target_os = "linux"))]
-    let attributes = winit::window::Window::default_attributes()
-        .with_title(title)
-        .with_inner_size(size)
-        .with_min_inner_size(size);
-
-    event_loop.create_window(attributes)
+        .with_fullscreen(Some(Fullscreen::Borderless(None)))
+        .build(event_loop)
 }
 
-pub fn new_window_ex(
-    event_loop: &'_ ActiveEventLoop,
+pub fn new_window_ex<T>(
+    event_loop: &'_ EventLoop<T>,
     title: &str,
-    width: f64,
-    height: f64,
-    attr_func: impl FnOnce(WindowAttributes) -> WindowAttributes,
+    win_func: impl FnOnce(WindowBuilder) -> WindowBuilder,
 ) -> std::result::Result<Window, OsError> {
-    let size = LogicalSize::new(width, height);
-    #[cfg(not(any(target_os = "android", target_os = "linux")))]
-    let mut attributes = winit::window::Window::default_attributes()
+    let mut builder = WindowBuilder::new()
         .with_title(title)
-        .with_inner_size(size)
-        .with_min_inner_size(size)
-        .with_visible(true);
-    #[cfg(any(target_os = "android", target_os = "linux"))]
-    let mut attributes = winit::window::Window::default_attributes()
-        .with_title(title)
-        .with_inner_size(size)
-        .with_min_inner_size(size);
+        .with_fullscreen(Some(Fullscreen::Borderless(None)));
 
-    attributes = (attr_func)(attributes);
+    builder = (win_func)(builder);
 
-    event_loop.create_window(attributes)
+    builder.build(event_loop)
 }
 
-pub fn new_surface(
-    event_loop: &'_ ActiveEventLoop,
-    title: &str,
-    width: f64,
-    height: f64,
-) -> Result<Surface> {
-    let window = new_window(event_loop, title, width, height)?;
+pub fn new_surface<T>(event_loop: &'_ EventLoop<T>, title: &str) -> Result<Surface> {
+    let window = new_window(event_loop, title)?;
 
-    Ok(Surface::new(window, |window| {
-        Renderer::new(window).unwrap()
-    }))
+    Ok(Surface {
+        window,
+        renderer: Renderer::new(&window)?,
+    })
 }
 
-pub fn new_surface_ex(
-    event_loop: &'_ ActiveEventLoop,
+pub fn new_surface_ex<T>(
+    event_loop: &'_ EventLoop<T>,
     title: &str,
-    width: f64,
-    height: f64,
-    attributes: impl FnOnce(WindowAttributes) -> WindowAttributes,
+    win_func: impl FnOnce(WindowBuilder) -> WindowBuilder,
 ) -> Result<Surface> {
-    let window = new_window_ex(event_loop, title, width, height, attributes)?;
+    let window = new_window_ex(event_loop, title, win_func)?;
 
-    Ok(Surface::new(window, |window| {
-        Renderer::new(window).unwrap()
-    }))
+    Ok(Surface {
+        window,
+        renderer: Renderer::new(&window)?,
+    })
 }
 
 pub struct TextParams<'a> {

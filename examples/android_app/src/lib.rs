@@ -18,13 +18,19 @@ fn _main(event_loop: EventLoop<()>) {
     event_loop.run(move |event, event_loop, control_flow| {
         *control_flow = ControlFlow::Poll;
         match event {
-            Event::Resumed => {
-                surface = Some({
-                    let mut surf = new_surface(event_loop, "Hello Android").unwrap();
+            Event::Resumed => match surface {
+                None => {
+                    // surface = Some({
+                    //     let mut surf =
+                    //         new_surface(event_loop, "Hello Android", 1920, 1080).unwrap();
+                    //     surf.request_redraw();
+                    //     surf
+                    // });
+                }
+                Some(ref mut surf) => {
                     surf.request_redraw();
-                    surf
-                });
-            }
+                }
+            },
             Event::Suspended => {
                 surface = None;
             }
@@ -38,6 +44,7 @@ fn _main(event_loop: EventLoop<()>) {
                         60.0,
                         corsola::glyphon::cosmic_text::Color::rgb(255, 255, 255),
                     );
+                    surf.request_redraw();
                 }
             }
             _ => {}
@@ -94,7 +101,7 @@ pub fn main() {
 #[no_mangle]
 fn android_main(android_app: AndroidApp) {
     use corsola::winit::platform::android::EventLoopBuilderExtAndroid;
-    let event_loop = EventLoopBuilder::new()
+    let event_loop = EventLoopBuilder::with_user_event()
         .with_android_app(android_app.clone())
         .build();
     // event_loop.set_control_flow(ControlFlow::Poll);

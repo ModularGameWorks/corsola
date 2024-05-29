@@ -1,5 +1,5 @@
 [app]
-name = "android"
-stylized-name = "Android"
+name = "android-app"
+stylized-name = "Android App"
 domain = "andrew.cmu.edu"
 template-pack = "egui"

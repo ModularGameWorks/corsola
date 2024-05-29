@@ -1,5 +1,5 @@
 [package]
-name = "android"
+name = "android-app"
 version = "0.1.0"
 authors = ["mwoo-cmu <mwoo2@andrew.cmu.edu>"]
 edition = "2018"
@@ -9,7 +9,7 @@ resolver = "2"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
-name = "android-desktop"
+name = "android-app-desktop"
 path = "gen/bin/desktop.rs"
 
 [package.metadata.cargo-android]
@@ -24,13 +24,13 @@ app-theme-parent = "Theme.MaterialComponents.DayNight.DarkActionBar"
 log = "0.4.14"
 chrono = "0.4"
 pollster = "0.2"
-corsola = { version = "0.1.0", path = "../.." }
 # egui = "0.22"
 # wgpu = "0.16"
 # winit = { version = "0.28", features = ["android-native-activity"] }
 # egui_demo_lib = "0.22"
 # egui-winit = { version = "0.22", default-features = false }
 # egui-wgpu = { version = "0.22", features = [ "winit" ] }
+corsola = { version = "0.1.0", path = "../.." }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.13.1"
